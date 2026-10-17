@@ -85,7 +85,7 @@ td input{min-width:80px}.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14p
 <p>© 2026 TRADERPRICE™. All rights reserved. The name, logo and content may not be copied or reused without written permission from Rishabh Kumar.</p></div></footer>
 <div id="adm"></div>
 <script>
-const $=id=>document.getElementById(id),S=JSON.parse($("state").textContent),let PW="";
+const $=id=>document.getElementById(id),S=JSON.parse($("state").textContent);let PW="";
 const inr=n=>(n<0?"-":"+")+"₹"+Math.abs(Math.round(n)).toLocaleString("en-IN");
 const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const cls=n=>n>=0?"up":"dn",tp=t=>(t.side=="Sell"?t.e-t.x:t.x-t.e)*t.q;

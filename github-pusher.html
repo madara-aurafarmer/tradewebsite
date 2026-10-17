@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GitHub Pusher</title>
+<style>
+:root{--bg:#050d1f;--gold:#e2b84a;--gold2:#f6dc8b;--ink:#eaf0ff;--mute:#9fb0d3;--line:rgba(246,220,139,.25);color-scheme:dark;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:20px;background:radial-gradient(800px 500px at 10% -10%,#14336e77,transparent),var(--bg);color:var(--ink);font:400 16px/1.6 system-ui,sans-serif}
+.card{width:min(560px,100%);padding:26px;border-radius:22px;background:rgba(255,255,255,.07);border:1px solid var(--line);backdrop-filter:blur(18px);box-shadow:0 12px 40px #0008}
+h1{margin:0 0 4px;font:400 1.6rem Georgia,serif;color:var(--gold2)}p{margin:0 0 16px;color:var(--mute);font-size:.92rem}
+label{display:block;margin-top:14px;font-size:.88rem;color:var(--mute)}
+input[type=text],input[type=password],input[type=file]{width:100%;margin-top:6px;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:#ffffff12;color:var(--ink);font:inherit}
+.ck{display:flex;gap:10px;align-items:center;margin-top:14px;color:var(--ink);font-size:.9rem}.ck input{width:auto}
+button{margin-top:20px;width:100%;padding:13px;border:0;border-radius:999px;background:linear-gradient(135deg,var(--gold2),var(--gold));color:#1a1405;font:700 1rem system-ui;cursor:pointer}button:disabled{opacity:.5}
+#log{margin-top:16px;font:.82rem/1.5 ui-monospace,monospace;white-space:pre-wrap;color:var(--mute);max-height:220px;overflow:auto}
+.warn{margin-top:14px;font-size:.8rem;color:#ffb3bb}:focus-visible{outline:2px solid var(--gold2);outline-offset:2px}
+</style></head><body>
+<div class="card">
+<h1>GitHub Pusher</h1><p>Upload a zip and push its files to your GitHub repo. Everything runs in your browser and talks only to api.github.com.</p>
+<label>Zip file<input type="file" id="zip" accept=".zip"></label>
+<label>Repo link<input type="text" id="repo" placeholder="https://github.com/owner/repo" autocomplete="off"></label>
+<label>GitHub token (needs Contents: read and write)<input type="password" id="tok" autocomplete="off"></label>
+<label>Branch<input type="text" id="br" value="main" autocomplete="off"></label>
+<label>Commit message<input type="text" id="msg" value="Upload from GitHub Pusher"></label>
+<div class="ck"><input type="checkbox" id="rep"><label for="rep" style="margin:0;color:inherit">Replace everything in the repo (delete files not in the zip)</label></div>
+<button id="go">Push to GitHub</button>
+<div id="log" aria-live="polite"></div>
+<div class="warn">The token is used once and never saved. Delete or revoke it on GitHub when you are done.</div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+const $=i=>document.getElementById(i),log=t=>{$("log").textContent+=t+"\n";$("log").scrollTop=1e9};
+const B="https://api.github.com";
+async function gh(path,tok,method="GET",body){const r=await fetch(B+path,{method,headers:{Authorization:"Bearer "+tok,Accept:"application/vnd.github+json","Content-Type":"application/json"},body:body?JSON.stringify(body):undefined});
+let j=null;try{j=await r.json()}catch(e){}if(!r.ok){const e=new Error((j&&j.message)||r.status);e.status=r.status;throw e}return j}
+$("go").onclick=async()=>{const btn=$("go");$("log").textContent="";
+try{
+if(typeof JSZip==="undefined")throw new Error("Could not load the zip library. Check your internet.");
+const f=$("zip").files[0],tok=$("tok").value.trim(),m=$("repo").value.trim().match(/github\.com[\/:]([^\/\s]+)\/([^\/\s#?]+?)(?:\.git)?\/?$/i);
+if(!f)throw new Error("Choose a zip file.");if(!m)throw new Error("Enter a valid repo link.");if(!tok)throw new Error("Enter your token.");
+const [_,o,r]=m,rp=`/repos/${o}/${r}`,br=$("br").value.trim()||"main";btn.disabled=true;
+log("Reading zip…");const z=await JSZip.loadAsync(f);
+let ents=Object.values(z.files).filter(e=>!e.dir&&!/(^|\/)(__MACOSX|\.git)\//.test(e.name)&&!/(^|\/)\.DS_Store$/.test(e.name));
+if(!ents.length)throw new Error("The zip has no files.");
+const tops=new Set(ents.map(e=>e.name.split("/")[0]));let strip=0;
+if(tops.size==1&&ents.every(e=>e.name.includes("/")))strip=1;
+const files=ents.map(e=>({e,path:strip?e.name.split("/").slice(1).join("/"):e.name}));
+log(`${files.length} files found`+(strip?" (top folder removed)":""));
+log("Checking repo and token…");await gh(rp,tok);
+let head=null,baseTree=null;
+try{head=(await gh(`${rp}/git/ref/heads/${encodeURIComponent(br)}`,tok)).object.sha}catch(e){if(e.status!=404)throw e}
+if(!head){log("Branch is empty or missing, initialising…");
+try{const c=await gh(`${rp}/contents/.init`,tok,"PUT",{message:"init",content:"",branch:br});head=c.commit.sha}catch(e){throw new Error("Could not initialise branch: "+e.message)}}
+if(!$("rep").checked){baseTree=(await gh(`${rp}/git/commits/${head}`,tok)).tree.sha}
+const tree=[];let n=0,i=0;
+async function work(){while(i<files.length){const x=files[i++],b64=await x.e.async("base64");
+const bl=await gh(`${rp}/git/blobs`,tok,"POST",{content:b64,encoding:"base64"});
+tree.push({path:x.path,mode:"100644",type:"blob",sha:bl.sha});log(`Uploaded ${++n}/${files.length}: ${x.path}`)}}
+await Promise.all([work(),work(),work()]);
+log("Creating commit…");
+const t=await gh(`${rp}/git/trees`,tok,"POST",baseTree?{base_tree:baseTree,tree}:{tree});
+const c=await gh(`${rp}/git/commits`,tok,"POST",{message:$("msg").value||"Upload",tree:t.sha,parents:[head]});
+await gh(`${rp}/git/refs/heads/${encodeURIComponent(br)}`,tok,"PATCH",{sha:c.sha});
+$("tok").value="";log(`\nDone. Pushed to https://github.com/${o}/${r}/tree/${br}\nNow delete this token on GitHub.`);
+}catch(e){log("\nError: "+e.message+(e.status==401?" (token invalid or expired)":e.status==403||e.status==404?" (check token permissions and repo name)":""))}
+btn.disabled=false};
+</script></body></html>
