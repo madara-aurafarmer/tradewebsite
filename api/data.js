@@ -23,7 +23,8 @@ module.exports = async (req, res) => {
   if (n === 1) await redis(["EXPIRE", key, 900]);
   if (n > 20) return res.status(429).json({ error: "Too many attempts" });
   const { pw, action, data } = req.body || {};
-  if (!process.env.ADMIN_PASSWORD || !same(pw, process.env.ADMIN_PASSWORD))
+  if (!process.env.ADMIN_PASSWORD) return res.status(500).json({ error: "ADMIN_PASSWORD not set in Vercel" });
+  if (!same(pw, process.env.ADMIN_PASSWORD))
     return res.status(401).json({ error: "Wrong password" });
   if (action === "auth") return res.status(200).json({ ok: true });
   if (action === "save") {
